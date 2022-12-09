@@ -46,37 +46,19 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	topic, payload, err := HandleUplink(req.ProductKey, req.DeviceName, req.RawTopic, req.RawPayload)
 	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		respBytes, _ := jsoniter.Marshal(struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		}{
-			Code:    -1,
-			Message: err.Error(),
-		})
-		w.Write(respBytes)
-	} else {
-		w.WriteHeader(http.StatusOK)
-		respBytes, _ := jsoniter.Marshal(struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-			Data    struct {
-				FogTopic   string `json:"fog_topic"`
-				FogPayload string `json:"fog_payload"`
-			}
-		}{
-			Code:    0,
-			Message: "",
-			Data: struct {
-				FogTopic   string "json:\"fog_topic\""
-				FogPayload string "json:\"fog_payload\""
-			}{
-				FogTopic:   topic,
-				FogPayload: payload,
-			},
-		})
-		w.Write(respBytes)
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
+
+	w.WriteHeader(http.StatusOK)
+	respBytes, _ := jsoniter.Marshal(struct {
+		FogTopic   string `json:"fog_topic"`
+		FogPayload string `json:"fog_payload"`
+	}{
+		FogTopic:   topic,
+		FogPayload: payload,
+	})
+	w.Write(respBytes)
 }
 
 // 上行
