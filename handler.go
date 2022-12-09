@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 
 	matcher "github.com/fogcloud-io/routermatcher"
@@ -24,8 +23,9 @@ type CloudGtwUplinkReq struct {
 var (
 	uplinkMatcher matcher.Matcher
 
-	ErrUnmatchedTopic  = errors.New("unmatched topic")
-	ErrInvalidUsername = errors.New("invalid username")
+	ErrInvalidTopic       = errors.New("invalid topic")
+	ErrNullTopicOrPayload = errors.New("null topic or payload")
+	ErrInvalidUsername    = errors.New("invalid username")
 )
 
 func init() {
@@ -47,6 +47,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	topic, payload, err := HandleUplink(req.ProductKey, req.DeviceName, req.RawTopic, req.RawPayload)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
 		return
 	}
 
@@ -72,11 +73,15 @@ const (
 )
 
 func HandleUplink(productKey, deviceName, rawTopic, rawPayload string) (fogTopic, fogPayload string, err error) {
+	if rawTopic == "" || rawPayload == "" {
+		err = ErrNullTopicOrPayload
+		return
+	}
 	log.Printf("raw_topic: %s, raw_payload: %s", rawTopic, rawPayload)
 
 	matchedTopic, params, matched := uplinkMatcher.MatchWithAnonymousParams(fogTopic)
 	if !matched {
-		return "", "", ErrUnmatchedTopic
+		return "", "", ErrInvalidTopic
 	}
 
 	switch matchedTopic {
@@ -86,7 +91,7 @@ func HandleUplink(productKey, deviceName, rawTopic, rawPayload string) (fogTopic
 
 	case AliyunTopicThingModelEventPost:
 		if len(params) != 3 {
-			err = ErrUnmatchedTopic
+			err = ErrInvalidTopic
 			return
 		}
 		fogTopic = FillTopic(FogTopicThingModelEventPost, productKey, deviceName, params[2])
@@ -94,20 +99,6 @@ func HandleUplink(productKey, deviceName, rawTopic, rawPayload string) (fogTopic
 	}
 
 	return
-}
-
-func payloadFogToAliyun(fogPayload string, method string) string {
-	fogJson := new(FogJson)
-	jsoniter.UnmarshalFromString(fogPayload, fogJson)
-
-	aliJson := new(AliyunJson)
-	aliJson.Id = strconv.Itoa(int(fogJson.Id))
-	aliJson.Version = "1.0"
-	aliJson.Method = method
-	aliJson.Params = fogJson.Params
-
-	bytes, _ := jsoniter.Marshal(aliJson)
-	return base64.StdEncoding.EncodeToString(bytes)
 }
 
 func payloadAliyunToFog(aliyunPayload string, method string) string {
@@ -136,16 +127,6 @@ type AliyunJson struct {
 	Version string                 `json:"version"`
 	Params  map[string]interface{} `json:"params"`
 	Method  string                 `json:"method"`
-}
-
-func parseUsername(username string) (pk, dn string, err error) {
-	params := strings.Split(username, "&")
-	if len(params) != 2 {
-		err = ErrInvalidUsername
-		return
-	}
-
-	return params[1], params[0], nil
 }
 
 func FillTopic(topic string, replaceStr ...string) string {
